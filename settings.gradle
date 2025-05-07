@@ -1,0 +1,3 @@
+rootProject.name = "multi-root-project"
+includeBuild('included-project-a')
+includeBuild('included-project-b')

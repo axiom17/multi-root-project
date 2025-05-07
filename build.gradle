@@ -1,0 +1,70 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+def includedBuilds = ['included-project-a', 'included-project-b']
+
+def collectedResultsDir = layout.buildDirectory.dir('collected-test-results')
+
+includedBuilds.each { buildName ->
+    def capitalized = buildName.capitalize()
+
+    tasks.register("copy${capitalized}TestJar", Copy) {
+        dependsOn gradle.includedBuild(buildName).task(':testJar')
+        from file("${buildName}/build/libs/${buildName}-test.jar")
+        into layout.buildDirectory.dir("libs")
+    }
+
+    tasks.register("run${capitalized}Tests", Test) {
+        dependsOn "copy${capitalized}TestJar"
+
+        testClassesDirs = files()
+        classpath = files()
+
+        def testJarFile = layout.buildDirectory.file("libs/${buildName}-test.jar").get().asFile
+        def unpackDir = layout.buildDirectory.dir("unpacked-tests/${buildName}").get().asFile
+
+        doFirst {
+            copy {
+                from zipTree(testJarFile)
+                into unpackDir
+            }
+
+            testClassesDirs = files(unpackDir)
+            classpath = files(unpackDir, "${buildName}/build/classes/java/test", "${buildName}/build/resources/test")
+        }
+
+        reports {
+            junitXml.required = true
+            html.required = true
+        }
+
+        outputs.dir collectedResultsDir.map { it.dir(buildName) }
+
+        doLast {
+            copy {
+                from reports.junitXml.outputLocation
+                into collectedResultsDir.get().dir(buildName)
+            }
+        }
+    }
+
+    tasks.named('test') {
+        dependsOn "run${capitalized}Tests"
+    }
+}
+
+tasks.register('collectAllureResults', Copy) {
+    includedBuilds.each { buildName ->
+        from file("${buildName}/build/allure-results")
+        into layout.buildDirectory.dir("allure-merged-results/${buildName}")
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'collectAllureResults'
+}
